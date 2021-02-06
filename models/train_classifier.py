@@ -12,7 +12,8 @@ import pickle
 import re
 from sqlalchemy import create_engine
 
-
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import make_scorer
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
@@ -37,6 +38,7 @@ def load_data(database_filepath):
         - A list of categories names 
     '''
 
+    db_table_name = 'disasters_messages'
     df = pd.read_sql_table(db_table_name, 'sqlite:///'+database_filepath)
     X = df['text'] 
     categories_list = [c for c in df.columns if c not in ['genre', 'text']]
@@ -72,6 +74,57 @@ def tokenize(text):
 
 
 
+def evaluate_results(ground_truth, predictions, categories_list = None):
+    '''
+    Function to extract many model scores for each categories
+    
+    Args:
+        ground_truth (dataset):            Expected predictions of the model
+        predictions (dataset):             Actual predictions of the model
+        categories_list (list(str)=None):  List of the categories names
+
+    Returns:
+        Dataframe of scores of each categories
+    '''
+
+
+    if(categories_list is None):
+        categories_list = ground_truth.columns
+        
+    all_scores = []
+    for i, col in enumerate(categories_list):
+        cls_rep = classification_report(ground_truth[col], predictions[:,i])
+
+        avg_scores = (cls_rep.split('\n')[-2]).split()[-4:]
+        cur_scores = {'col':col}
+        for i, f in enumerate(['precision', 'recall','f1-score','support']):
+            cur_scores[f] = float(avg_scores[i]) 
+        
+        all_scores.append(cur_scores)
+
+    all_scores_df = pd.DataFrame(all_scores).set_index('col')
+    return all_scores_df
+
+
+
+def custom_score_func(ground_truth, predictions):
+    '''
+    Custom functon to score and compare models by the gridSearch
+    
+    Args:
+        ground_truth (dataset):            Expected predictions of the model
+        predictions (dataset):             Actual predictions of the model
+
+    Returns:
+        Score of the model as a unique value between 0 and 1
+    '''
+
+    all_scores_df = evaluate_results(ground_truth, predictions)
+    mean_f1_scores = all_scores_df['f1-score'].mean()
+    return mean_f1_scores
+
+
+
 def build_model():
     '''
     Generate the pipeline 
@@ -82,12 +135,24 @@ def build_model():
         the sklearn pipeline
     '''
 
-    model = Pipeline([
-    ('vect', CountVectorizer(tokenizer=tokenize, max_df=0.5, max_features=10000)),
-    ('tfidf', TfidfTransformer(use_idf=True)),
-    ('multi_clf', MultiOutputClassifier(RandomForestClassifier()))
-    ])
-    return model
+    parameters = {
+        'vect__max_df': (0.5, 0.8),
+        'tfidf__use_idf': (True, False)
+        }                                                        
+
+    pipeline = Pipeline([
+            ('vect', CountVectorizer(tokenizer=tokenize)),
+            ('tfidf', TfidfTransformer()),
+            ('multi_clf', MultiOutputClassifier(RandomForestClassifier()))
+        ])
+   
+    # Create a custom scorer result for the first model
+    custom_scorer = make_scorer(custom_score_func, greater_is_better=True)
+    
+    cv = GridSearchCV(estimator=pipeline, param_grid=parameters,
+                 verbose=10, n_jobs=4, cv=2, scoring=custom_scorer)
+
+    return cv
 
 
 
@@ -107,27 +172,16 @@ def evaluate_model(model, X_test, Y_test, category_names):
     '''
 
     Y_pred = model.predict(X_test)
+
+
+    all_scores_df = evaluate_results(Y_test, Y_pred)
+    print(all_scores_df[['f1-score','precision','recall']])
     
-    all_scores = []
-    for i, col in enumerate(category_names):
-        cls_rep = classification_report(Y_test[col], Y_pred[:,i])
-
-        avg_scores = (cls_rep.split('\n')[-2]).split()[-4:]
-        cur_scores = {'col':col}
-        for i, f in enumerate(['precision', 'recall','f1-score','support']):
-            cur_scores[f] = float(avg_scores[i]) 
-        
-        all_scores.append(cur_scores)
-
-    all_scores_df = pd.DataFrame(all_scores).set_index('col')
-
     general_score = all_scores_df['f1-score'].mean()
     return general_score
 
 
-
     
-
 def save_model(model, model_filepath):
     '''
     Calculate a numeric score of the capacity of a model to predict categories of a message
@@ -140,6 +194,7 @@ def save_model(model, model_filepath):
     '''
     pickle.dump(model, open(model_filepath, 'wb'))
 
+    
 
 def main():
     if len(sys.argv) == 3:
