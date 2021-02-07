@@ -8,6 +8,7 @@ from nltk.tokenize import word_tokenize
 from flask import Flask
 from flask import render_template, request, jsonify
 from plotly.graph_objs import Bar
+from plotly.graph_objs import Heatmap
 from sklearn.externals import joblib
 from sqlalchemy import create_engine
 
@@ -26,11 +27,11 @@ def tokenize(text):
     return clean_tokens
 
 # load data
-engine = create_engine('sqlite:///../data/YourDatabaseName.db')
-df = pd.read_sql_table('YourTableName', engine)
+engine = create_engine('sqlite:///../data/DisasterResponse.db')
+df = pd.read_sql_table('disasters_messages', engine)
 
 # load model
-model = joblib.load("../models/your_model_name.pkl")
+model = joblib.load("../models/disaster_model2021-02-06.pkl")
 
 
 # index webpage displays cool visuals and receives user input text for model
@@ -40,9 +41,24 @@ def index():
     
     # extract data needed for visuals
     # TODO: Below is an example - modify to extract data for your own visuals
-    genre_counts = df.groupby('genre').count()['message']
+    genre_counts = df.groupby('genre').count()['text']
     genre_names = list(genre_counts.index)
-    
+
+
+    # extract data for the heatmap of categories
+    categories_list = [c for c in df.columns if c not in ['genre', 'text', 'related']]
+    top_cat_df = df[categories_list].mean().sort_values(ascending=False).head(10)
+    top_cat_names = top_cat_df.index
+
+    cat_hm_val =[]
+    for x in top_cat_names:
+        curr_cat = df[x]==1
+        cat_hm_val.append(df[curr_cat][top_cat_names].mean().round(2).values.tolist())
+
+
+
+
+
     # create visuals
     # TODO: Below is an example - modify to create your own visuals
     graphs = [
@@ -60,10 +76,29 @@ def index():
                     'title': "Count"
                 },
                 'xaxis': {
-                    'title': "Genre"
+                    'title': "Category"
+                }
+            }
+        },
+        {
+            'data': [
+                Heatmap(
+                    {
+                     'x': top_cat_names,
+                     'y': top_cat_names,
+                     'z': cat_hm_val
+                    }
+                )
+            ],
+
+            'layout': {
+                'title': 'Correlation between messages Categories',
+                'xaxis': {
+                    'title': "Most detected categories"
                 }
             }
         }
+
     ]
     
     # encode plotly graphs in JSON
