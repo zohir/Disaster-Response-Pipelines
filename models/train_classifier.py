@@ -192,7 +192,8 @@ def save_model(model, model_filepath):
         
     Returns: None
     '''
-    pickle.dump(model, open(model_filepath, 'wb'))
+    
+    pickle.dump(model.best_estimator_, open(model_filepath, 'wb'))
 
     
 
