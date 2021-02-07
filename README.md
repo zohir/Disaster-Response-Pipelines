@@ -12,3 +12,15 @@
     `python run.py`
 
 3. Go to http://0.0.0.0:3001/
+
+
+### LIBRARIES:
+  - python=3.6.12
+  - numpy=1.12.1
+  - pandas=0.23.3
+  - plotly=4.14.3
+  - scikit-learn=0.19.1
+  - sqlalchemy=1.1.13
+  - pickleshare=0.7.5
+  - flask=1.1.2
+
